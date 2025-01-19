@@ -91,4 +91,39 @@ describe('test/app/middleware/site_file.test.js', () => {
         });
     });
   });
+
+  describe('custom favicon with function', () => {
+    let app;
+    before(() => {
+      app = utils.app('apps/favicon-function');
+      return app.ready();
+    });
+    after(() => app.close());
+
+    it('should redirect https://eggjs.org/favicon.ico', () => {
+      return app.httpRequest()
+        .get('/favicon.ico')
+        .expect(302)
+        .expect(res => {
+          assert(!res.headers['set-cookie']);
+          assert(res.headers.location === 'https://eggjs.org/function/favicon.ico');
+        });
+    });
+  });
+
+  describe('siteFile.cacheControl = no-store', () => {
+    let app;
+    before(() => {
+      app = utils.app('apps/siteFile-custom-cacheControl');
+      return app.ready();
+    });
+    after(() => app.close());
+
+    it('should get custom cache-control', async () => {
+      await app.httpRequest()
+        .get('/favicon.ico')
+        .expect(res => assert(res.headers['cache-control'].includes('no-store')))
+        .expect(200);
+    });
+  });
 });

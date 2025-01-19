@@ -1,13 +1,15 @@
+[English](./README.md) | 简体中文
+
 <div style="text-align:center">
-	<img src="docs/assets/egg-banner.png" />
+	<img src="site/public/assets/egg-banner.png" />
 </div>
 
 [![NPM version](https://img.shields.io/npm/v/egg.svg?style=flat-square)](https://npmjs.org/package/egg)
 [![NPM quality](http://npm.packagequality.com/shield/egg.svg?style=flat-square)](http://packagequality.com/#?package=egg)
 [![NPM download](https://img.shields.io/npm/dm/egg.svg?style=flat-square)](https://npmjs.org/package/egg)
 
-[![Continuous Integration](https://github.com/eggjs/egg/workflows/Continuous%20integration/badge.svg)](https://github.com/eggjs/egg/actions?query=branch%3Amaster)
-[![Test coverage](https://img.shields.io/codecov/c/github/eggjs/egg.svg?style=flat-square)](https://codecov.io/gh/eggjs/egg)
+[![Continuous Integration](https://github.com/eggjs/egg/actions/workflows/nodejs.yml/badge.svg)](https://github.com/eggjs/egg/actions?query=branch%3Amaster)
+[![codecov](https://codecov.io/gh/eggjs/egg/branch/3.x/graph/badge.svg?token=2sKMCDNkcl)](https://app.codecov.io/gh/eggjs/egg/tree/3.x)
 [![Known Vulnerabilities](https://snyk.io/test/npm/egg/badge.svg?style=flat-square)](https://snyk.io/test/npm/egg)
 [![Open Collective backers and sponsors](https://img.shields.io/opencollective/all/eggjs?style=flat-square)](https://opencollective.com/eggjs)
 
@@ -18,7 +20,7 @@
 - 深度框架定制
 - 丰富的[插件](https://github.com/search?q=topic%3Aegg-plugin&type=Repositories)
 
-> 支持 Node.js 8.x 及以上版本。
+> 支持 Node.js 14.20.0 及以上版本。
 
 ## 快速开始
 
@@ -39,7 +41,7 @@ $ open http://localhost:7001
 
 ## 贡献者
 
-[![contributors](https://ergatejs.implements.io/badges/contributors/eggjs/egg.png)](https://github.com/eggjs/egg/graphs/contributors)
+[![contributors](https://contrib.rocks/image?repo=eggjs/egg&max=240&columns=26)](https://github.com/eggjs/egg/graphs/contributors)
 
 ## 贡献代码
 

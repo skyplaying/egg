@@ -125,6 +125,95 @@ describe('test/lib/core/utils.test.js', () => {
       assert(obj.undefined$ === undefined);
       assert(obj.boolean$ === '<Boolean>');
       assert(obj.symbol$ === '<Symbol>');
+      assert(obj.regexp$ === '<RegExp>');
+    });
+
+    it('should convert a plain recursive object', () => {
+      const obj = {
+        plainObj: 'Plain',
+        Id: 1,
+        recurisiveObj: {
+          value1: 'string',
+          value2: 1,
+          ignoreValue: /^[a-z]/,
+        },
+      };
+      utils.convertObject(obj, [ 'ignoreValue' ]);
+      assert(obj.recurisiveObj.value1 === 'string');
+      assert(obj.recurisiveObj.value2 === 1);
+      assert(obj.recurisiveObj.ignoreValue === '<RegExp>');
+      assert(obj.plainObj === 'Plain');
+      assert(obj.Id === 1);
+    });
+
+    it('should convert an anonymous class', () => {
+      const obj = {
+        anonymousClassWithPropName: class { },
+        '': class { },
+      };
+      utils.convertObject(obj);
+      assert(obj.anonymousClassWithPropName === '<Class anonymousClassWithPropName>');
+      assert(obj[''] === '<Class anonymous>');
+    });
+
+    it('should support keyPath', () => {
+      const obj = {
+        plainObj: 'Plain',
+        Id: 1,
+        recursiveObj: {
+          value1: 'string',
+          value2: 1,
+          innerObj: {
+            key1: true,
+          },
+        },
+        arr: [
+          {
+            v1: 'str',
+          },
+        ],
+      };
+      utils.convertObject(obj, [], [ 'id', 'recursiveObj.value2', 'recursiveObj.innerObj', 'arr' ]);
+      assert.deepEqual(obj, {
+        plainObj: 'Plain',
+        Id: 1,
+        recursiveObj: {
+          value1: 'string',
+          value2: '<Number>',
+          innerObj: '<Object>',
+        },
+        arr: '<Array>',
+      });
+    });
+
+    it('should hit key and keyPath simultaneously work', () => {
+      const obj = {
+        recursiveObj: {
+          value1: 'string',
+          value2: 1,
+          innerObj: {
+            key1: true,
+          },
+        },
+        arr: [
+          {
+            v1: 'str',
+          },
+        ],
+      };
+      utils.convertObject(
+        obj,
+        [ 'arr', 'value2', 'innerObj' ],
+        [ 'recursiveObj.value2', 'recursiveObj.innerObj', 'arr' ]
+      );
+      assert.deepEqual(obj, {
+        recursiveObj: {
+          value1: 'string',
+          value2: '<Number>',
+          innerObj: '<Object>',
+        },
+        arr: '<Array>',
+      });
     });
   });
 

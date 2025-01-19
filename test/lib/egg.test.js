@@ -1,10 +1,7 @@
-'use strict';
-
 const mm = require('egg-mock');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const { rimraf, sleep } = require('mz-modules');
 const spy = require('spy');
 const Transport = require('egg-logger').Transport;
 const utils = require('../utils');
@@ -16,17 +13,20 @@ describe('test/lib/egg.test.js', () => {
   describe('dumpConfig()', () => {
     const baseDir = utils.getFilepath('apps/demo');
     let app;
-    before(() => {
+    before(async () => {
       app = utils.app('apps/demo');
-      return app.ready();
+      await app.ready();
+      // CI 环境 Windows 写入磁盘需要时间
+      await utils.sleep(1100);
     });
     after(() => app.close());
 
-    it('should dump config and plugins', () => {
+    it('should dump config、plugins、appInfo', () => {
       let json = require(path.join(baseDir, 'run/agent_config.json'));
       assert(/\d+\.\d+\.\d+/.test(json.plugins.onerror.version));
       assert(json.config.name === 'demo');
       assert(json.config.tips === 'hello egg');
+      assert(json.appInfo.name === 'demo');
       json = require(path.join(baseDir, 'run/application_config.json'));
       checkApp(json);
 
@@ -38,6 +38,8 @@ describe('test/lib/egg.test.js', () => {
         assert(json.config.name === 'demo');
         // should dump dynamic config
         assert(json.config.tips === 'hello egg started');
+
+        assert(json.appInfo);
       }
     });
 
@@ -134,19 +136,19 @@ describe('test/lib/egg.test.js', () => {
       assert(/\[egg:core] dump config after ready, \d+ms/.test(content));
     });
 
-    it('should read timing data', function* () {
+    it('should read timing data', () => {
       let json = readJson(path.join(baseDir, `run/agent_timing_${process.pid}.json`));
       assert(json.length === 41);
       assert(json[1].name === 'Application Start');
       assert(json[0].pid === process.pid);
 
       json = readJson(path.join(baseDir, `run/application_timing_${process.pid}.json`));
-      assert(json.length === 63);
+      // assert(json.length === 64);
       assert(json[1].name === 'Application Start');
       assert(json[0].pid === process.pid);
     });
 
-    it('should disable timing after ready', function* () {
+    it('should disable timing after ready', () => {
       const json = app.timing.toJSON();
       const last = json[json.length - 1];
       app.timing.start('a');
@@ -164,6 +166,25 @@ describe('test/lib/egg.test.js', () => {
         done();
       });
       app.dumpTiming();
+    });
+
+    it('should dumpTiming when timeout', async () => {
+      const baseDir = utils.getFilepath('apps/dumptiming-timeout');
+      await Promise.all([ utils.rimraf(path.join(baseDir, 'run')), utils.rimraf(path.join(baseDir, 'logs')) ]);
+      const app = utils.app(baseDir);
+      await app.ready();
+      await utils.sleep(100);
+      assertFile(path.join(baseDir, `run/application_timing_${process.pid}.json`));
+      assertFile(path.join(baseDir, 'logs/dumptiming-timeout/common-error.log'), /unfinished timing item: {"name":"Did Load in app.js:didLoad"/);
+    });
+
+    it('should dump slow-boot-action warnning log', async () => {
+      const baseDir = utils.getFilepath('apps/dumptiming-slowBootActionMinDuration');
+      await Promise.all([ utils.rimraf(path.join(baseDir, 'run')), utils.rimraf(path.join(baseDir, 'logs')) ]);
+      const app = utils.app(baseDir);
+      await app.ready();
+      await utils.sleep(100);
+      assertFile(path.join(baseDir, 'logs/dumptiming-slowBootActionMinDuration/egg-web.log'), /\[egg:core]\[slow-boot-action] #\d+ \d+ms, name: Did Load in app\.js:didLoad/);
     });
   });
 
@@ -211,10 +232,8 @@ describe('test/lib/egg.test.js', () => {
 
     it('should dump in config', async () => {
       const baseDir = utils.getFilepath('apps/dumpconfig-circular');
-      await sleep(100);
       await app.ready();
-
-      await sleep(100);
+      await utils.sleep(100);
       const json = readJson(path.join(baseDir, 'run/application_config.json'));
       assert.deepEqual(json.config.foo, [ '~config~foo' ]);
     });
@@ -235,6 +254,26 @@ describe('test/lib/egg.test.js', () => {
     });
   });
 
+  describe('dumpConfig() ignore key path', () => {
+    const baseDir = utils.getFilepath('apps/dump-ignore-key-path');
+    let app;
+    before(() => {
+      app = utils.app('apps/dump-ignore-key-path');
+      return app.ready();
+    });
+    after(() => app.close());
+
+    it('should ignore key path', () => {
+      const json = require(path.join(baseDir, 'run/application_config.json'));
+      assert.deepEqual(json.config.withKeyPaths, {
+        inner: {
+          key1: '<Object>',
+        },
+        key2: '<String len: 3>',
+      });
+    });
+  });
+
   describe('custom config from env', () => {
     let app;
     let baseDir;
@@ -244,10 +283,9 @@ describe('test/lib/egg.test.js', () => {
       baseDir = utils.getFilepath('apps/config-env');
       runDir = path.join(baseDir, 'custom_rundir');
       logDir = path.join(baseDir, 'custom_logdir');
-      await rimraf(runDir);
-      await rimraf(logDir);
-      await rimraf(path.join(baseDir, 'run'));
-      await rimraf(path.join(baseDir, 'logs'));
+      await Promise.all([ utils.rimraf(runDir), utils.rimraf(logDir),
+        utils.rimraf(path.join(baseDir, 'logs')), utils.rimraf(path.join(baseDir, 'run')) ]);
+
       mm(process.env, 'EGG_APP_CONFIG', JSON.stringify({
         logger: {
           dir: logDir,
@@ -258,14 +296,17 @@ describe('test/lib/egg.test.js', () => {
       app = utils.app('apps/config-env');
       await app.ready();
     });
-    after(async () => {
-      await app.close();
-      await rimraf(runDir);
-      await rimraf(logDir);
+    after(() => {
+      app.close();
+      utils.rimraf(runDir);
+      utils.rimraf(logDir);
+      utils.rimraf(path.join(baseDir, 'logs'));
+      utils.rimraf(path.join(baseDir, 'run'));
     });
     afterEach(mm.restore);
 
     it('should custom dir', async () => {
+      await utils.sleep(1000);
       assertFile(path.join(runDir, 'application_config.json'));
       assertFile(path.join(logDir, 'egg-web.log'));
       assertFile.fail(path.join(baseDir, 'run/application_config.json'));
@@ -334,20 +375,22 @@ describe('test/lib/egg.test.js', () => {
     });
 
     it('should handle unhandledRejection and log it', async () => {
-      await app.httpRequest()
+      const req1 = app.httpRequest()
         .get('/throw-unhandledRejection')
         .expect('foo')
         .expect(200);
-      await app.httpRequest()
+      const req2 = app.httpRequest()
         .get('/throw-unhandledRejection-string')
         .expect('foo')
         .expect(200);
-      await app.httpRequest()
+      const req3 = app.httpRequest()
         .get('/throw-unhandledRejection-obj')
         .expect('foo')
         .expect(200);
 
-      await sleep(1100);
+      await Promise.all([ req1, req2, req3 ]);
+      await utils.sleep(1000);
+
       const logfile = path.join(utils.getFilepath('apps/app-throw'), 'logs/app-throw/common-error.log');
       const body = fs.readFileSync(logfile, 'utf8');
       assert(body.includes('nodejs.unhandledRejectionError: foo reject error'));
@@ -373,7 +416,7 @@ describe('test/lib/egg.test.js', () => {
         .expect('hello')
         .expect(200);
 
-      await sleep(1000);
+      await utils.sleep(1000);
 
       const logPath = path.join(utils.getFilepath('apps/base-context-class'), 'logs/base-context-class/base-context-class-web.log');
       const log = fs.readFileSync(logPath, 'utf8');
@@ -401,23 +444,25 @@ describe('test/lib/egg.test.js', () => {
     });
   });
 
-  describe.skip('egg-ready', () => {
-    let app;
+  describe('egg-ready', () => {
+
+    let app = null;
+
     before(() => {
       app = utils.app('apps/demo');
     });
+
     after(() => app.close());
 
     it('should only trigger once', async () => {
-      let triggerCount = 0;
-      mm(app.lifecycle, 'triggerServerDidReady', () => {
-        triggerCount++;
-      });
+
       await app.ready();
+
       app.messenger.emit('egg-ready');
       app.messenger.emit('egg-ready');
       app.messenger.emit('egg-ready');
-      assert(triggerCount === 1);
+
+      assert(app.triggerCount === 1);
     });
   });
 

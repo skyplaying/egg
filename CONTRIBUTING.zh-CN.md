@@ -1,3 +1,5 @@
+[English](./CONTRIBUTING.md) | 简体中文
+
 # 代码贡献规范
 
 有任何疑问，欢迎提交 [issue](https://github.com/eggjs/egg/issues)，
@@ -40,7 +42,28 @@
 - 提供必要的链接，如申请流程，术语解释和参考文档等。
 - 同步修改中英文文档，或者在 PR 里面说明。
 
-## 提交代码
+## 下拉与提交代码
+
+### 下拉代码
+
+请现在 GitHub 上点击 [Egg 项目](https://github.com/eggjs/egg)的“Fork”按钮，将 Egg 项目克隆到自己的仓库中，然后借助 [git](https://git-scm.com/download/) 将代码克隆到本地，以后的开发都在本地进行。
+
+### 安装依赖
+
+你可使用 Node 自带的 `npm` 包管理工具命令安装所有在“package.json”上的必备依赖：
+
+```bash
+npm i
+```
+
+请注意: 如你安装过程中看到依赖性相关的错误，而导致安装失败，且你的 npm 版本 >=7.X，临时
+解决方案是加上 `--legacy-peer-deps`：
+
+```bash
+npm i --legacy-peer-deps
+```
+
+然后请及时在 Issues 里边提 PR，告知开发者。
 
 ### 提交 Pull Request
 
@@ -149,6 +172,25 @@ BREAKING CHANGE:
 
 有关详情，可以参考[英语标题大小写]。
 
+### 预览已生成的文档
+
+如果你修改了 site 文件夹下的 docs 中的某个 md 文件内容，需要重新生成文档，然后才能看到效果。
+
+如果你使用的 Node 版本在 14——16 之间，请使用如下命令：
+
+```bash
+$ npm run site:devWithNode14-16
+```
+
+否则请使用此命令：
+
+```bash
+$ npm run site:dev
+```
+
+这是因为 Node.js 在 17.X 之后编译文档存在兼容性问题，因此必须降级“OpenSSL”方可正常打包编译。
+如仅仅是编译打包生成文档，使用 `site:build` 相关命令即可。
+
 ## 发布管理
 
 egg 基于 [semver] 语义化版本号进行发布。
@@ -169,16 +211,18 @@ egg 基于 [semver] 语义化版本号进行发布。
 
 #### 准备工作：
 
-- 建立 milestone，确认需求关联 milestone，指派和更新 issues，如 [1.x milestone]。
+- 建立发布里程碑，确认需求关联它，指派和更新已知问题，如 [1.x 发布里程碑]。
 - 从 `master` 分支新建 `next` 分支，并设置 tag 为 `next`。
 
 #### 发布前：
 
-- 确认当前 Milestone 所有的 issue 都已关闭或可延期，完成性能测试。
-- 发起一个新的 [Release Proposal MR]，按照 [node CHANGELOG] 进行 `History` 的编写，修正文档中与版本相关的内容，commits 可以自动生成。
+- 确认当前发布里程碑所有的已知问题都已关闭或可延期，完成性能测试。
+- 发起一个新的 [发布合并请求]，按照 [node 变更日志] 进行 `History` 的编写，修正文档中与版本相关的内容，commits 可以自动生成：
+
     ```bash
     $ npm run commits
     ```
+
 - 指定下一个大版本的 PM。
 
 #### 发布时：
@@ -197,9 +241,9 @@ egg 基于 [semver] 语义化版本号进行发布。
 ```
 
 [semver]: https://semver.org/lang/zh-CN/
-[Release Proposal MR]: https://github.com/nodejs/node/pull/4181
-[node CHANGELOG]: https://github.com/nodejs/node/blob/master/CHANGELOG.md
-[1.x milestone]: https://github.com/eggjs/egg/milestone/1
+[发布合并请求]: https://github.com/nodejs/node/pull/4181
+[node 变更日志]: https://github.com/nodejs/node/blob/master/CHANGELOG.md
+[1.x 发布里程碑]: https://github.com/eggjs/egg/milestone/1
 [npm]: http://npmjs.com/
 [我是如何发布一个 npm 包的]: https://fengmk2.com/blog/2016/how-i-publish-a-npm-package
 [英语标题大小写]: https://headlinecapitalization.com/

@@ -1,8 +1,5 @@
-'use strict';
-
 const assert = require('assert');
 const mm = require('egg-mock');
-const sleep = require('mz-modules/sleep');
 const utils = require('../../../utils');
 const Messenger = require('../../../../lib/core/messenger/ipc');
 
@@ -62,7 +59,7 @@ describe('test/lib/core/messenger/ipc.test.js', () => {
       app = utils.cluster('apps/messenger');
       app.coverage(true);
       await app.ready();
-      await sleep(1000);
+      await utils.sleep(1000);
     });
 
     it('app should accept agent message', () => {
@@ -94,7 +91,7 @@ describe('test/lib/core/messenger/ipc.test.js', () => {
       app.coverage(false);
       return app.ready();
     });
-    before(() => sleep(1000));
+    before(() => utils.sleep(1000));
     after(() => app.close());
 
     it('should broadcast each other', () => {
@@ -123,7 +120,7 @@ describe('test/lib/core/messenger/ipc.test.js', () => {
     after(() => app.close());
 
     it('app should accept agent message', async () => {
-      await sleep(10000);
+      await utils.sleep(10000);
 
       const m = app.stdout.match(/\d+=\d+/g);
       const map = new Map();
@@ -155,6 +152,33 @@ describe('test/lib/core/messenger/ipc.test.js', () => {
         assert(count(app.stdout, 'app2app') === 4);
         assert(count(app.stdout, 'agent2agent') === 1);
         assert(count(app.stdout, 'app2agent') === 2);
+        done();
+      }, 500);
+
+      function count(data, key) {
+        return data.split('\n').filter(line => {
+          return line.indexOf(key) >= 0;
+        }).length;
+      }
+    });
+  });
+
+  describe('worker_threads mode', () => {
+    let app;
+    before(() => {
+      mm.env('default');
+      app = utils.cluster('apps/messenger-app-agent', { workers: 1, startMode: 'worker_threads' });
+      app.coverage(false);
+      return app.ready();
+    });
+    after(() => app.close());
+
+    it('app should accept agent message', done => {
+      setTimeout(() => {
+        assert(count(app.stdout, 'agent2app') === 1);
+        assert(count(app.stdout, 'app2app') === 1);
+        assert(count(app.stdout, 'agent2agent') === 1);
+        assert(count(app.stdout, 'app2agent') === 1);
         done();
       }, 500);
 

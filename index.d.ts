@@ -1,13 +1,28 @@
-/// <reference types="node" />
 import accepts = require('accepts');
-import KoaApplication = require('koa');
-import KoaRouter = require('koa-router');
+import { AsyncLocalStorage } from 'async_hooks';
 import { EventEmitter } from 'events'
 import { Readable } from 'stream';
 import { Socket } from 'net';
 import { IncomingMessage, ServerResponse } from 'http';
-import { EggLogger as Logger, EggLoggers, LoggerLevel as EggLoggerLevel, EggLoggersOptions, EggLoggerOptions, EggContextLogger } from 'egg-logger';
-import { HttpClient, RequestOptions2 as RequestOptions } from 'urllib';
+import KoaApplication = require('koa');
+import KoaRouter = require('koa-router');
+import {
+  EggLogger as Logger,
+  EggLoggers,
+  LoggerLevel as EggLoggerLevel,
+  EggLoggersOptions,
+  EggLoggerOptions,
+  EggContextLogger,
+} from 'egg-logger';
+import {
+  RequestOptions2 as RequestOptionsOld,
+  HttpClientResponse as HttpClientResponseOld,
+} from 'urllib';
+import {
+  RequestURL,
+  RequestOptions,
+  HttpClientResponse as HttpClientResponseNext,
+} from 'urllib-next';
 import {
   EggCoreBase,
   FileLoaderOption,
@@ -38,12 +53,34 @@ declare module 'egg' {
   // Remove specific property from the specific class
   type RemoveSpecProp<T, P> = Pick<T, Exclude<keyof T, P>>;
 
-  export interface EggHttpClient extends HttpClient<RequestOptions> { }
+  // Usage:
+  // ```ts
+  // import { HttpClientRequestURL, HttpClientRequestOptions, HttpClientResponse } from 'egg';
+  // async function request(url: HttpClientRequestURL, options: HttpClientRequestOptions): Promise<HttpClientResponse> {
+  //   return await app.httpclient.request(url, options);
+  // }
+  // ```
+  export type HttpClientRequestURL = RequestURL;
+  export type HttpClientRequestOptions = RequestOptions;
+  export type HttpClientResponse<T = any> = HttpClientResponseNext<T>;
+  // Compatible with both urllib@2 and urllib@3 RequestOptions to request
+  export interface EggHttpClient extends EventEmitter {
+    request<T = any>(url: HttpClientRequestURL): Promise<HttpClientResponseOld<T> | HttpClientResponse<T>>;
+    request<T = any>(url: HttpClientRequestURL, options: RequestOptionsOld | HttpClientRequestOptions):
+      Promise<HttpClientResponseOld<T> | HttpClientResponse<T>>;
+    curl<T = any>(url: HttpClientRequestURL): Promise<HttpClientResponseOld<T> | HttpClientResponse<T>>;
+    curl<T = any>(url: HttpClientRequestURL, options: RequestOptionsOld | HttpClientRequestOptions):
+      Promise<HttpClientResponseOld<T> | HttpClientResponse<T>>;
+    safeCurl<T = any>(url: HttpClientRequestURL): Promise<HttpClientResponseOld<T> | HttpClientResponse<T>>;
+    safeCurl<T = any>(url: HttpClientRequestURL, options: RequestOptionsOld | HttpClientRequestOptions):
+      Promise<HttpClientResponseOld<T> | HttpClientResponse<T>>;
+  }
+
   interface EggHttpConstructor {
     new(app: Application): EggHttpClient;
   }
 
-  export interface EggContextHttpClient extends HttpClient<RequestOptions> { }
+  export interface EggContextHttpClient extends EggHttpClient { }
   interface EggContextHttpClientConstructor {
     new(ctx: Context): EggContextHttpClient;
   }
@@ -223,6 +260,8 @@ declare module 'egg' {
     disableConsoleAfterReady?: boolean;
     /** using performance.now() timer instead of Date.now() for more more precise milliseconds, defaults to `false`. e.g.: logger will set 1.456ms instead of 1ms. */
     enablePerformanceTimer?: boolean;
+    /** using the app logger instead of EggContextLogger, defaults to `false` */
+    enableFastContextLogger?: boolean;
   }
 
   /** Custom Loader Configuration */
@@ -259,17 +298,21 @@ declare module 'egg' {
     /** https.Agent */
     httpsAgent?: HttpClientBaseConfig;
     /** Default request args for httpclient */
-    request?: RequestOptions;
+    request?: HttpClientRequestOptions | RequestOptionsOld;
     /** Whether enable dns cache */
     enableDNSCache?: boolean;
-    /** Enable proxy request, default is false. */
+    /** Enable proxy request. Default is `false`. */
     enableProxy?: boolean;
-    /** proxy agent uri or options, default is null. */
+    /** proxy agent uri or options. Default is `null`. */
     proxy?: string | { [key: string]: any };
     /** DNS cache lookup interval */
     dnsCacheLookupInterval?: number;
     /** DNS cache max age */
     dnsCacheMaxLength?: number;
+    /** use urllib@3 HttpClient. Default is `false`  */
+    useHttpClientNext?: boolean;
+    /** Allow to use HTTP2 first, only work on `useHttpClientNext = true`. Default is `false` */
+    allowH2?: boolean;
   }
 
   export interface EggAppConfig {
@@ -290,10 +333,11 @@ declare module 'egg' {
      * @property {String} textLimit - json body size limit, default 1mb
      * @property {Boolean} strict - json body strict mode, if set strict value true, then only receive object and array json body
      * @property {Number} queryString.arrayLimit - from item array length limit, default 100
-     * @property {Number} queryString.depth - json value deep lenght, default 5
-     * @property {Number} queryString.parameterLimit - paramter number limit ,default 1000
-     * @property {string[]} enableTypes - parser will only parse when request type hits enableTypes, default is ['json', 'form']
-     * @property {any} extendTypes - support extend types
+     * @property {Number} queryString.depth - json value deep length, default 5
+     * @property {Number} queryString.parameterLimit - parameter number limit, default 1000
+     * @property {String[]} enableTypes - parser will only parse when request type hits enableTypes, default is ['json', 'form']
+     * @property {Object} extendTypes - support extend types
+     * @property {String} onProtoPoisoning - Defines what action must take when parsing a JSON object with `__proto__`. Possible values are `'error'`, `'remove'` and `'ignore'`. Default is `'error'`, it will return `400` response when `Prototype-Poisoning` happen.
      */
     bodyParser: {
       enable: boolean;
@@ -315,6 +359,8 @@ declare module 'egg' {
         form: string[];
         text: string[];
       };
+      /** Default is `'error'`, it will return `400` response when `Prototype-Poisoning` happen. */
+      onProtoPoisoning: 'error' | 'remove' | 'ignore';
     };
 
     /**
@@ -333,6 +379,7 @@ declare module 'egg' {
      * @property {Object} coreLogger - custom config of coreLogger
      * @property {Boolean} allowDebugAtProd - allow debug log at prod, defaults to false
      * @property {Boolean} enablePerformanceTimer - using performance.now() timer instead of Date.now() for more more precise milliseconds, defaults to false. e.g.: logger will set 1.456ms instead of 1ms.
+     * @property {Boolean} enableFastContextLogger - using the app logger instead of EggContextLogger, defaults to false
      */
     logger: EggLoggerConfig;
 
@@ -412,7 +459,7 @@ declare module 'egg' {
       /**
        * i18n resource file dir, not recommend to change default value
        */
-      dir: string;
+      dirs: string[];
       /**
        * custom the locale value field, default `query.locale`, you can modify this config, such as `query.lang`
        */
@@ -471,11 +518,12 @@ declare module 'egg' {
       csrf: any;
       ssrf: {
         ipBlackList: string[];
+        ipExceptionList: string[];
         checkAddress?(ip: string): boolean;
       };
       xframe: {
         enable: boolean;
-        value: 'SAMEORIGIN' | 'DENY' | 'ALLOW-FROM';
+        value: 'SAMEORIGIN' | 'DENY' | string;
       };
       hsts: any;
       methodnoallow: { enable: boolean };
@@ -491,7 +539,7 @@ declare module 'egg' {
     onClientError(err: Error, socket: Socket, app: EggApplication): ClientErrorResponse | Promise<ClientErrorResponse>;
 
     /**
-     * server timeout in milliseconds, default to 2 minutes.
+     * server timeout in milliseconds, default to 0 (no timeout).
      *
      * for special request, just use `ctx.req.setTimeout(ms)`
      *
@@ -508,7 +556,7 @@ declare module 'egg' {
     headers: { [key: string]: string };
   }
 
-  export interface Router extends KoaRouter<any, Context> {
+  export interface Router extends Omit<KoaRouter<any, Context>, 'url'> {
     /**
      * restful router api
      */
@@ -516,7 +564,7 @@ declare module 'egg' {
 
     /**
      * @param {String} name - Router name
-     * @param {Object} params - more parameters
+     * @param {Object} [params] - more parameters
      * @example
      * ```js
      * router.url('edit_post', { id: 1, name: 'foo', page: 2 })
@@ -527,10 +575,15 @@ declare module 'egg' {
      * @return {String} url by path name and query params.
      * @since 1.0.0
      */
-    url(name: string, params: any): any;
+    url(name: string, params?: any): string;
+    /**
+     * Alias for the url method
+     */
+    pathFor(name: string, params?: any): string;
+    methods: string[];
   }
 
-  export interface EggApplication extends EggCoreBase<EggAppConfig> { // tslint:disable-line
+  export interface EggApplication extends Omit<EggCoreBase<EggAppConfig>, 'ctxStorage' | 'currentContext'> {
     /**
      * HttpClient instance
      */
@@ -574,7 +627,7 @@ declare module 'egg' {
      */
     addSingleton(name: string, create: any): void;
 
-    runSchedule(schedulePath: string): Promise<any>;
+    runSchedule(schedulePath: string, ...args: any[]): Promise<any>;
 
     /**
      * http request helper base on httpclient, it will auto save httpclient log.
@@ -681,6 +734,26 @@ declare module 'egg' {
      * @param {Function} scope - the first args is an anonymous ctx
      */
     runInBackground(scope: (ctx: Context) => void): void;
+
+    /**
+     * Run async function in the anonymous context scope
+     * @see Context#runInAnonymousContextScope
+     * @param {Function} scope - the first args is an anonymous ctx, scope should be async function
+     * @param {Request} req - if you want to mock request like querystring, you can pass an object to this function.
+     */
+    runInAnonymousContextScope<R>(scope: (ctx: Context) => Promise<R>, req?: Request): Promise<R>;
+
+    /**
+     * Get current execute ctx async local storage
+     * @returns {AsyncLocalStorage} localStorage - store current execute Context
+     */
+    get ctxStorage(): AsyncLocalStorage<Context>;
+
+    /**
+     * Get current execute ctx, maybe undefined
+     * @returns {Context} ctx - current execute Context
+     */
+    get currentContext(): Context;
   }
 
   export interface IApplicationLocals extends PlainObject { }

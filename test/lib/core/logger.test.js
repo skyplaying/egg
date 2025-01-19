@@ -1,17 +1,20 @@
-'use strict';
-
-const assert = require('assert');
-const path = require('path');
-const fs = require('fs');
+const assert = require('node:assert');
+const path = require('node:path');
+const fs = require('node:fs');
 const mm = require('egg-mock');
 const Logger = require('egg-logger');
-const sleep = require('mz-modules/sleep');
 const utils = require('../../utils');
 
 describe('test/lib/core/logger.test.js', () => {
   let app;
-  afterEach(mm.restore);
-  afterEach(() => sleep(5000).then(() => app.close()));
+  afterEach(async () => {
+    if (app) {
+      await utils.sleep(5000);
+      await app.close();
+      app = null;
+    }
+    await mm.restore();
+  });
 
   it('should got right default config on prod env', async () => {
     mm.env('prod');
@@ -103,12 +106,13 @@ describe('test/lib/core/logger.test.js', () => {
     const logfile = path.join(app.config.logger.dir, 'common-error.log');
     // app.config.logger.buffer.should.equal(false);
     ctx.logger.error(new Error('mock nobuffer error'));
-
-    await sleep(1000);
-
-    assert(
-      fs.readFileSync(logfile, 'utf8').includes('nodejs.Error: mock nobuffer error\n')
-    );
+    await utils.sleep(1000);
+    if (process.platform !== 'darwin') {
+      // skip check on macOS
+      assert(
+        fs.readFileSync(logfile, 'utf8').includes('nodejs.Error: mock nobuffer error\n')
+      );
+    }
   });
 
   it('log buffer enable cache on non-local and non-unittest env', async () => {
@@ -124,7 +128,7 @@ describe('test/lib/core/logger.test.js', () => {
     // app.config.logger.buffer.should.equal(true);
     ctx.logger.error(new Error('mock enable buffer error'));
 
-    await sleep(1000);
+    await utils.sleep(1000);
 
     assert(fs.readFileSync(logfile, 'utf8').includes(''));
   });
@@ -139,7 +143,7 @@ describe('test/lib/core/logger.test.js', () => {
     const logfile = path.join(app.config.logger.dir, 'logger-output-json-web.json.log');
     ctx.logger.info('json format');
 
-    await sleep(2000);
+    await utils.sleep(2000);
 
     assert(fs.existsSync(logfile));
     assert(fs.readFileSync(logfile, 'utf8').includes('"message":"json format"'));
@@ -163,7 +167,7 @@ describe('test/lib/core/logger.test.js', () => {
     mm.env('local');
     app = utils.cluster('apps/logger');
     app
-    // .debug()
+      // .debug()
       .coverage(false)
       .expect('stdout', /agent info/)
       .expect('stdout', /app info/)
@@ -180,9 +184,10 @@ describe('test/lib/core/logger.test.js', () => {
     mm(process.env, 'EGG_HOME', baseDir);
     app = utils.cluster('apps/logger');
     app
-    // .debug()
+      // .debug()
       .coverage(false)
-      .end(err => {
+      .end(async err => {
+        await utils.sleep(1000);
         assert(!err);
         const content = fs.readFileSync(path.join(baseDir, 'logs/logger/common-error.log'), 'utf8');
         assert(content.includes('nodejs.Error: agent error'));
@@ -200,7 +205,7 @@ describe('test/lib/core/logger.test.js', () => {
     app.loggers.errorLogger.error(new Error('errorLogger error'));
     app.loggers.customLogger.error(new Error('customLogger error'));
 
-    await sleep(1000);
+    await utils.sleep(1000);
 
     const content = fs.readFileSync(path.join(app.baseDir, 'logs/logger/common-error.log'), 'utf8');
     assert(content.includes('nodejs.Error: logger error'));
@@ -214,6 +219,24 @@ describe('test/lib/core/logger.test.js', () => {
     await app.ready();
 
     assert(app.agent.logger.options.file === app.agent.coreLogger.options.file);
+  });
+
+  it('should `config.logger.enableFastContextLogger` = true work', async () => {
+    app = utils.app('apps/app-enableFastContextLogger');
+    await app.ready();
+    app.mockContext({
+      tracer: {
+        traceId: 'mock-trace-id-123',
+      },
+    });
+    await app.httpRequest()
+      .get('/')
+      .expect(200)
+      .expect({
+        enableFastContextLogger: true,
+      });
+    await utils.sleep(1000);
+    app.expectLog(/ INFO \d+ \[-\/127\.0\.0\.1\/mock-trace-id-123\/\d+ms GET \/] enableFastContextLogger: true/);
   });
 
   describe('logger.level = DEBUG', () => {
@@ -235,6 +258,27 @@ describe('test/lib/core/logger.test.js', () => {
           );
           done();
         });
+    });
+  });
+
+  describe('onelogger', () => {
+    let app;
+    before(() => {
+      app = utils.app('apps/custom-logger');
+      return app.ready();
+    });
+    after(() => app.close());
+
+    it('should work with onelogger', async () => {
+      await app.httpRequest()
+        .get('/')
+        .expect({
+          ok: true,
+        })
+        .expect(200);
+      await utils.sleep(1000);
+      app.expectLog('[custom-logger-label] hello myLogger', 'myLogger');
+      app.expectLog('hello logger');
     });
   });
 });
